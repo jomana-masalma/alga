@@ -1,5 +1,8 @@
-import { Skeleton } from "./ui/components/skeleton"
-import { Card, CardContent, CardHeader } from "./ui/components/card"
+import { Skeleton } from "@/components/skeleton"
+import { Card, CardContent, CardHeader } from "@/components/card"
+// In your layout.tsx or at the top of your page.tsx
+import 'leaflet/dist/leaflet.css';
+
 
 export function DashboardSkeleton() {
   return (
@@ -42,4 +45,3 @@ export function DashboardSkeleton() {
     </div>
   )
 }
-

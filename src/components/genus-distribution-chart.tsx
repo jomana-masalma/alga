@@ -2,7 +2,7 @@
 
 import { useMemo } from "react"
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts"
-import { ChartContainer, ChartTooltip, ChartTooltipContent } from "./ui/chart"
+import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/chart"
 
 interface AlgaeSpecies {
   "Algae species": string
@@ -63,4 +63,3 @@ export default function GenusDistributionChart({ data }: GenusDistributionChartP
     </ChartContainer>
   )
 }
-

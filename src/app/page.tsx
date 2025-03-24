@@ -1,15 +1,14 @@
-import { Suspense } from "react"
-import  Dashboard  from "@/components/dashboard"
+import { AlgaeDataProvider } from "@/components/algae-data-provider"
+import Dashboard from "@/components/dashboard"
+import 'leaflet/dist/leaflet.css';
 
-import { DashboardSkeleton } from "@/components/dashboard-skeleton"
 
 export default function Home() {
   return (
     <main className="min-h-screen bg-background">
-      <Suspense fallback={<DashboardSkeleton />}>
+      <AlgaeDataProvider>
         <Dashboard />
-      </Suspense>
+      </AlgaeDataProvider>
     </main>
   )
 }
-
