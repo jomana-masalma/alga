@@ -30,6 +30,12 @@ interface AlgaeDataContextType {
   loading: boolean
   uploadCSV: (csvText: string) => void
   dataStats: ReturnType<typeof analyzeAlgaeData> | null
+  failedSpecies: { name: string; error?: string }[]
+  setFailedSpecies: (species: { name: string; error?: string }[] | ((prev: { name: string; error?: string }[]) => { name: string; error?: string }[])) => void
+  isErrorPanelExpanded: boolean
+  setIsErrorPanelExpanded: (expanded: boolean) => void
+  speciesWithGBIFData: string[]
+  setSpeciesWithGBIFData: (species: string[]) => void
 }
 
 // Create the context
@@ -48,6 +54,9 @@ export function AlgaeDataProvider({ children }: { children: ReactNode }) {
   const [selectedProducer, setSelectedProducer] = useState("all")
   const [loading, setLoading] = useState(true)
   const [dataStats, setDataStats] = useState<ReturnType<typeof analyzeAlgaeData> | null>(null)
+  const [failedSpecies, setFailedSpecies] = useState<{ name: string; error?: string }[]>([])
+  const [isErrorPanelExpanded, setIsErrorPanelExpanded] = useState(true)
+  const [speciesWithGBIFData, setSpeciesWithGBIFData] = useState<string[]>([])
 
   // Load initial data from local CSV file
   useEffect(() => {
@@ -127,6 +136,12 @@ export function AlgaeDataProvider({ children }: { children: ReactNode }) {
         loading,
         uploadCSV,
         dataStats,
+        failedSpecies,
+        setFailedSpecies,
+        isErrorPanelExpanded,
+        setIsErrorPanelExpanded,
+        speciesWithGBIFData,
+        setSpeciesWithGBIFData,
       }}
     >
       {children}

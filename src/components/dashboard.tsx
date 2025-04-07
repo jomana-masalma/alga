@@ -1,4 +1,3 @@
-
 "use client"
 
 import type React from "react"
@@ -10,7 +9,7 @@ import { Input } from "@/components/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/select"
 import { Badge } from "@/components/badge"
 import { Button } from "@/components/button"
-import { Download, Filter, RefreshCw, Upload, Database, BarChart, MapPin, Info, AlertCircle } from "lucide-react"
+import { Download, Filter, RefreshCw, Upload, Database, BarChart, MapPin, Info, AlertCircle, Loader2, ChevronUp, ChevronDown } from "lucide-react"
 import AlgaeTable from "./algae-table"
 import GenusDistributionChart from "./genus-distribution-chart"
 import ColorDistributionChart from "./color-distribution-chart"
@@ -50,6 +49,10 @@ export default function Dashboard() {
     loading,
     uploadCSV,
     dataStats,
+    failedSpecies,
+    isErrorPanelExpanded,
+    setIsErrorPanelExpanded,
+    speciesWithGBIFData
   } = useAlgaeData()
 
   // Handle file upload
@@ -126,8 +129,6 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
-
-
 
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 mb-6">
@@ -386,29 +387,130 @@ export default function Dashboard() {
         </TabsContent>
 
         {/* Map Tab */}
-        <TabsContent value="map" className="mt-4">
-          <Card className="shadow-sm">
-            <CardHeader className="bg-gray-50 border-b">
-              <CardTitle className="flex items-center">
-                <MapPin className="mr-2 h-5 w-5 text-primary" />
-                Geographic Distribution
-              </CardTitle>
-              <CardDescription>Approximate locations of producers and species</CardDescription>
+        <TabsContent value="map" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Algae Distribution Map</CardTitle>
+              <CardDescription>
+                Visual representation of algae species distribution based on GBIF data
+              </CardDescription>
             </CardHeader>
-            <CardContent className="h-[600px] p-0 sm:p-4">
-              <div className="relative h-full">
-                <div className="absolute top-4 right-4 z-10 bg-white/90 backdrop-blur-sm p-3 rounded-lg shadow-sm border text-sm">
-                  <p className="font-medium mb-1">Map Legend</p>
-                  <div className="flex items-center mb-1">
-                    <div className="w-3 h-3 rounded-full bg-blue-500 mr-2"></div>
-                    <span>Producer Location</span>
+            <CardContent className="space-y-4">
+              {/* Status Panels - Moved here from AlgaeMap */}
+              <div className="space-y-2">
+                {/* Active Filters Summary */}
+                {filteredData.length > 0 && (
+                  <div className="bg-white/95 backdrop-blur-sm p-3 rounded-lg shadow-md border">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Filter className="h-4 w-4 text-blue-600" />
+                      <span className="font-medium text-blue-600">Active Filters</span>
+                    </div>
+                    <div className="text-sm">
+                      {searchTerm && <span>Search: "{searchTerm}" | </span>}
+                      {selectedGenus !== 'all' && <span>Genus: {selectedGenus} | </span>}
+                      {selectedColor !== 'all' && <span>Color: {selectedColor} | </span>}
+                      {selectedProducer !== 'all' && <span>Producer: {selectedProducer}</span>}
+                    </div>
                   </div>
-                  <div className="flex items-center">
-                    <div className="w-3 h-3 rounded-full bg-green-500 mr-2"></div>
-                    <span>Multiple Species</span>
+                )}
+
+                {/* Loading State */}
+                {loading && (
+                  <div className="bg-white/95 backdrop-blur-sm p-3 rounded-lg shadow-md border">
+                    <div className="flex items-center gap-2 text-blue-600">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span className="font-medium">Loading occurrences...</span>
+                    </div>
                   </div>
-                </div>
-                <AlgaeMap data={filteredData} />
+                )}
+
+                {/* No Results State */}
+                {!loading && filteredData.length === 0 && (
+                  <div className="bg-white/95 backdrop-blur-sm p-3 rounded-lg shadow-md border">
+                    <div className="flex items-center gap-2 text-gray-600">
+                      <Info className="h-4 w-4" />
+                      <span className="font-medium">No species found matching the current filters.</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Missed Data Summary */}
+                {!loading && filteredData.length > 0 && (
+                  <div className="bg-white/95 backdrop-blur-sm p-3 rounded-lg shadow-md border">
+                    <div className="flex items-center gap-2 mb-2">
+                      <AlertCircle className="h-4 w-4 text-yellow-600" />
+                      <span className="font-medium text-yellow-600">Data Coverage</span>
+                    </div>
+                    <div className="text-sm space-y-1">
+                      <div className="flex justify-between">
+                        <span>Total species in filter:</span>
+                        <span className="font-medium">{filteredData.length}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Species with GBIF data:</span>
+                        <span className="font-medium text-green-600">
+                          {speciesWithGBIFData.length}
+                        </span>
+                      </div>
+                      {failedSpecies.length > 0 && (
+                        <div className="flex justify-between">
+                          <span>Species without GBIF data:</span>
+                          <span className="font-medium text-red-600">{failedSpecies.length}</span>
+                        </div>
+                      )}
+                      <div className="mt-2 pt-2 border-t">
+                        <div className="text-xs text-muted-foreground mb-1">Data Source:</div>
+                        <div className="flex justify-between">
+                          <span>From CSV:</span>
+                          <span className="font-medium">{filteredData.length}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>From GBIF API:</span>
+                          <span className="font-medium text-blue-600">
+                            {speciesWithGBIFData.length}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    {failedSpecies.length > 0 && (
+                      <div className="mt-2">
+                        <Button
+                          variant="ghost"
+                          className="w-full flex items-center justify-between p-2 text-red-600 hover:bg-red-50"
+                          onClick={() => setIsErrorPanelExpanded(!isErrorPanelExpanded)}
+                        >
+                          <div className="flex items-center gap-2">
+                            <AlertCircle className="h-4 w-4" />
+                            <span className="font-medium">Show missing species</span>
+                          </div>
+                          {isErrorPanelExpanded ? (
+                            <ChevronUp className="h-4 w-4" />
+                          ) : (
+                            <ChevronDown className="h-4 w-4" />
+                          )}
+                        </Button>
+                        {isErrorPanelExpanded && (
+                          <div className="mt-2 space-y-1">
+                            {failedSpecies.map(species => (
+                              <div key={species.name} className="text-sm text-red-600 flex gap-2">
+                                <span>•</span>
+                                <span>
+                                  <strong>{species.name}</strong>
+                                  {species.error && ` - ${species.error}`}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Map Component */}
+              <div className="h-[600px] relative">
+                <AlgaeMap />
               </div>
             </CardContent>
           </Card>

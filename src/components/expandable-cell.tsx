@@ -10,20 +10,24 @@ interface ExpandableCellProps {
   content: string | string[]
   maxLength?: number
   className?: string
+  isProducerList?: boolean
 }
 
-export default function ExpandableCell({ 
-  content, 
+export default function ExpandableCell({
+  content,
   maxLength = 50,
-  className = "" 
+  className = "",
+  isProducerList = false
 }: ExpandableCellProps) {
   const [isExpanded, setIsExpanded] = useState(false)
-  
-  // Handle different content types using consistent parsing logic
-  const items: string[] = Array.isArray(content) 
-    ? content 
+
+  // Handle different content types
+  const items: string[] = Array.isArray(content)
+    ? content
     : typeof content === 'string'
-      ? parseProducers(content) // Use parseProducers for all string content
+      ? isProducerList
+        ? parseProducers(content) // Only parse as producers if explicitly marked
+        : [content] // Otherwise treat as single string
       : []
 
   // If content is empty or just a dash
@@ -39,15 +43,15 @@ export default function ExpandableCell({
   // For text that's too long but not a list
   if (items.length === 1 && items[0].length > maxLength) {
     const displayText = isExpanded ? items[0] : `${items[0].substring(0, maxLength)}...`
-    
+
     return (
       <div className={`flex items-center ${className}`}>
         <span className={isExpanded ? "" : "truncate"}>
           {displayText}
         </span>
-        <Button 
-          variant="ghost" 
-          size="sm" 
+        <Button
+          variant="ghost"
+          size="sm"
           className="h-6 px-2 ml-1"
           onClick={() => setIsExpanded(!isExpanded)}
         >
@@ -58,7 +62,6 @@ export default function ExpandableCell({
   }
 
   // For lists with multiple items, show only the first item followed by dropdown
-  // This matches the UI pattern shown in the example image
   return (
     <div className={`flex items-center ${className}`}>
       <span className="truncate mr-2">{items[0]}</span>

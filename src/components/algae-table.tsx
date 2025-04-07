@@ -79,7 +79,7 @@ export default function AlgaeTable({ data }: AlgaeTableProps) {
       visible: true,
       width: "25%",
       priority: 5,
-      render: (item) => <ExpandableCell content={item.Producers || "-"} />
+      render: (item) => <ExpandableCell content={item.Producers || "-"} isProducerList={true} />
     },
     {
       key: "links",
@@ -120,8 +120,8 @@ export default function AlgaeTable({ data }: AlgaeTableProps) {
   }
 
   const toggleColumnVisibility = (index: number) => {
-    setColumns(prev => 
-      prev.map((col, i) => 
+    setColumns(prev =>
+      prev.map((col, i) =>
         i === index ? { ...col, visible: !col.visible } : col
       )
     )
@@ -195,8 +195,8 @@ export default function AlgaeTable({ data }: AlgaeTableProps) {
           <TableHeader className="bg-muted/50 sticky top-0 z-10">
             <TableRow>
               {visibleColumns.map((column, index) => (
-                <TableHead 
-                  key={index} 
+                <TableHead
+                  key={index}
                   className="font-semibold"
                   style={{ width: column.width }}
                 >
@@ -254,7 +254,7 @@ export default function AlgaeTable({ data }: AlgaeTableProps) {
               <PaginationItem>
                 <PaginationPrevious
                   onClick={() => handlePageChange(Math.max(1, currentPage - 1))}
-                  disabled={currentPage === 1}
+                  isActive={currentPage > 1}
                 />
               </PaginationItem>
 
@@ -263,7 +263,7 @@ export default function AlgaeTable({ data }: AlgaeTableProps) {
               <PaginationItem>
                 <PaginationNext
                   onClick={() => handlePageChange(Math.min(totalPages, currentPage + 1))}
-                  disabled={currentPage === totalPages}
+                  isActive={currentPage < totalPages}
                 />
               </PaginationItem>
             </PaginationContent>
