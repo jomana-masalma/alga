@@ -18,23 +18,26 @@ export function parseCSV(csvText: string): AlgaeSpecies[] {
 
   for (let i = 1; i < lines.length; i++) {
     const values = lines[i].split(",")
-    const item: any = {}
+    const item: Record<string, string | number | undefined> = {}
 
+    // First set all string values
     for (let j = 0; j < headers.length; j++) {
-      item[headers[j].trim()] = values[j] ? values[j].trim() : ""
+      const header = headers[j].trim()
+      item[header] = values[j] ? values[j].trim() : ""
     }
 
-    // Attempt to parse Latitude and Longitude
+    // Then handle numeric fields separately
     try {
-      item.Latitude = Number.parseFloat(item.Latitude)
-      item.Longitude = Number.parseFloat(item.Longitude)
-    } catch (error) {
-      // If parsing fails, leave them as undefined or handle as needed
+      const lat = Number.parseFloat(item.Latitude as string)
+      const lon = Number.parseFloat(item.Longitude as string)
+      item.Latitude = !isNaN(lat) ? lat : undefined
+      item.Longitude = !isNaN(lon) ? lon : undefined
+    } catch {
       item.Latitude = undefined
       item.Longitude = undefined
     }
 
-    data.push(item as AlgaeSpecies)
+    data.push(item as unknown as AlgaeSpecies)
   }
 
   return data

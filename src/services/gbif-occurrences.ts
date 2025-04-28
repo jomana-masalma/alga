@@ -1,100 +1,41 @@
-import axios from 'axios'
+import axios, { AxiosRequestConfig } from 'axios'
+import { gbifCache } from '@/lib/gbif-cache'
+import { GBIFOccurrence, GBIFSpecies, GBIFSpeciesMatch } from '@/types/gbif-types'
 
-// Create axios instance with timeout and retry configuration
+// Custom axios request config type with retry options
+interface CustomRequestConfig extends AxiosRequestConfig {
+  retry?: number;
+  retryDelay?: number;
+}
+
+// Create axios instance with timeout configuration
 const gbifAxios = axios.create({
+  baseURL: 'https://api.gbif.org/v1',
   timeout: 10000, // 10 seconds timeout
-  headers: {
-    'User-Agent': 'AlgaeDB/1.0', // Custom user agent
-  }
 })
 
-// Add retry logic for network errors
+// Add retry logic with exponential backoff
 gbifAxios.interceptors.response.use(undefined, async (error) => {
-  // Only retry on network errors, not on 4xx/5xx responses
-  if (error.message === 'Network Error' && error.config && !error.config.__isRetry) {
-    error.config.__isRetry = true
-    console.log('Retrying network request...')
-    return gbifAxios(error.config)
+  const config = error.config as CustomRequestConfig
+  if (!config || !config.retry) {
+    return Promise.reject(error)
   }
-  return Promise.reject(error)
+
+  config.retry -= 1
+  if (config.retry === 0) {
+    return Promise.reject(error)
+  }
+
+  const backoff = new Promise(resolve => {
+    setTimeout(() => resolve(null), config.retryDelay || 1000)
+  })
+  config.retryDelay = (config.retryDelay || 1000) * 2
+
+  await backoff
+  return gbifAxios(config)
 })
-
-export interface GBIFOccurrence {
-  key: string;
-  scientificName: string;
-  decimalLatitude: number;
-  decimalLongitude: number;
-  eventDate?: string;
-  media?: {
-    identifier: string;
-    title?: string;
-  }[];
-}
-
-export interface GBIFSpeciesMatch {
-  usageKey: number;
-  scientificName: string;
-  canonicalName: string;
-  rank: string;
-  status: string;
-  confidence: number;
-  matchType: string;
-  kingdom: string;
-  phylum: string;
-  class?: string;
-  order?: string;
-  family?: string;
-  genus?: string;
-  species?: string;
-  kingdomKey: number;
-  phylumKey: number;
-  classKey?: number;
-  orderKey?: number;
-  familyKey?: number;
-  genusKey?: number;
-  speciesKey?: number;
-  synonym: boolean;
-  taxonID?: string;
-}
-
-export interface GBIFSpecies {
-  key: number;
-  scientificName: string;
-  canonicalName: string;
-  vernacularNames?: { vernacularName: string; language: string }[];
-  descriptions?: { description: string; language: string; type: string }[];
-  kingdom: string;
-  phylum: string;
-  class?: string;
-  order?: string;
-  family?: string;
-  genus?: string;
-  species?: string;
-  genusKey?: number;
-  familyKey?: number;
-  media?: {
-    identifier: string;
-    title?: string;
-    format?: string;
-    type?: string;
-  }[];
-  synonyms?: string[];
-}
-
-// Original GBIF API base URL for direct calls
-const GBIF_API_BASE = 'https://api.gbif.org/v1'
-// Local API route for proxied requests
-const LOCAL_API_ROUTE = '/api/gbif'
-// Fallback CORS proxy for direct GBIF calls if needed
-const CORS_PROXY_URL = 'https://cors-anywhere.herokuapp.com/'
-
-// Cache for API responses to reduce API calls
-const speciesMatchCache = new Map<string, GBIFSpeciesMatch>()
-const speciesDetailsCache = new Map<number, GBIFSpecies>()
-const occurrencesCache = new Map<number, GBIFOccurrence[]>()
 
 // Global in-memory taxonomic database for common species
-// This helps speed up common species lookups without API calls
 const COMMON_TAXA = {
   "Fucus vesiculosus": { usageKey: 2563239, kingdom: "Plantae", phylum: "Phaeophyta" },
   "Saccharina latissima": { usageKey: 2397026, kingdom: "Chromista", phylum: "Ochrophyta" },
@@ -106,7 +47,35 @@ const COMMON_TAXA = {
   "Himanthalia elongata": { usageKey: 2397056, kingdom: "Chromista", phylum: "Ochrophyta" },
   "Undaria pinnatifida": { usageKey: 2397034, kingdom: "Chromista", phylum: "Ochrophyta" },
   "Ascophyllum nodosum": { usageKey: 2396916, kingdom: "Chromista", phylum: "Ochrophyta" }
-};
+}
+
+/**
+ * Optimized function to fetch GBIF data
+ */
+async function fetchGBIFData<T>(endpoint: string, params: Record<string, string | number | boolean | undefined> = {}): Promise<T> {
+  try {
+    // Filter out undefined values from params
+    const filteredParams = Object.fromEntries(
+      Object.entries(params).filter(([, value]) => value !== undefined)
+    ) as Record<string, string | number | boolean>;
+
+    const config: CustomRequestConfig = {
+      params: filteredParams,
+      retry: 3,
+      retryDelay: 1000,
+    }
+    const response = await gbifAxios.get(endpoint, config)
+    return response.data
+  } catch (error) {
+    console.error(`Error fetching GBIF data from ${endpoint}:`, error)
+    throw error
+  }
+}
+
+// Cache for API responses to reduce API calls
+const speciesMatchCache = new Map<string, GBIFSpeciesMatch>()
+const speciesDetailsCache = new Map<number, GBIFSpecies>()
+const occurrencesCache = new Map<number, GBIFOccurrence[]>()
 
 // Mapping of taxonomic synonyms to accepted names
 // This helps with species that might be in GBIF under a different name
@@ -150,88 +119,6 @@ const TAXONOMIC_SYNONYMS: Record<string, string> = {
 function resolveSynonym(name: string): string {
   const normalizedName = name.trim();
   return TAXONOMIC_SYNONYMS[normalizedName] || normalizedName;
-}
-
-/**
- * Helper function to fetch GBIF data using our local API route first,
- * then fallback to direct API calls with CORS handling if needed
- */
-async function fetchGBIFData(endpoint: string, params: Record<string, any> = {}) {
-  // Try using our local API route first (preferred method)
-  try {
-    const searchParams = new URLSearchParams({
-      endpoint,
-      ...params
-    })
-
-    const fullLocalUrl = `${LOCAL_API_ROUTE}?${searchParams.toString()}`
-    console.log(`Attempting local API request: ${fullLocalUrl}`)
-
-    const response = await fetch(fullLocalUrl)
-    if (!response.ok) {
-      throw new Error(`Local API route error: ${response.status} - ${response.statusText}`)
-    }
-    return await response.json()
-  } catch (localApiError) {
-    console.warn('Local API route failed, falling back to direct GBIF API call:', localApiError)
-
-    // Fall back to direct API call with CORS handling
-    try {
-      // Convert params to URL parameters
-      const queryParams = Object.entries(params)
-        .filter(([_, value]) => value !== undefined)
-        .map(([key, value]) => {
-          if (Array.isArray(value)) {
-            return value.map(v => `${key}=${encodeURIComponent(v)}`).join('&')
-          }
-          return `${key}=${encodeURIComponent(String(value))}`
-        })
-        .join('&')
-
-      const fullUrl = `${GBIF_API_BASE}/${endpoint}${queryParams ? '?' + queryParams : ''}`
-      console.log(`Attempting direct GBIF API request: ${fullUrl}`)
-
-      const response = await fetch(fullUrl)
-      if (!response.ok) {
-        throw new Error(`HTTP error! Status: ${response.status} - ${response.statusText}`)
-      }
-      return await response.json()
-    } catch (directApiError) {
-      console.error(`Error with direct GBIF API call:`, directApiError)
-
-      // Last resort: try with CORS proxy
-      if (directApiError instanceof Error &&
-          (directApiError.message.includes('CORS') || directApiError.message === 'Network Error')) {
-        console.log('Trying request with CORS proxy...')
-        try {
-          // Convert params to URL parameters again for the proxy request
-          const proxyQueryParams = Object.entries(params)
-            .filter(([_, value]) => value !== undefined)
-            .map(([key, value]) => {
-              if (Array.isArray(value)) {
-                return value.map(v => `${key}=${encodeURIComponent(v)}`).join('&')
-              }
-              return `${key}=${encodeURIComponent(String(value))}`
-            })
-            .join('&')
-
-          const fullProxyUrl = `${GBIF_API_BASE}/${endpoint}${proxyQueryParams ? '?' + proxyQueryParams : ''}`
-          console.log(`Attempting CORS proxy request: ${fullProxyUrl}`)
-
-          const proxyResponse = await fetch(CORS_PROXY_URL + fullProxyUrl)
-          if (!proxyResponse.ok) {
-            throw new Error(`HTTP error with proxy! Status: ${proxyResponse.status} - ${proxyResponse.statusText}`)
-          }
-          return await proxyResponse.json()
-        } catch (proxyError) {
-          console.error('Proxy request also failed:', proxyError)
-          throw proxyError
-        }
-      }
-
-      throw directApiError
-    }
-  }
 }
 
 /**
@@ -309,7 +196,7 @@ export async function matchSpeciesName(name: string): Promise<GBIFSpeciesMatch |
 
   try {
     console.log(`Attempting to match species name: ${normalizedName}`);
-    const data = await fetchGBIFData('species/match', { name: normalizedName, verbose: true })
+    const data = await fetchGBIFData<GBIFSpeciesMatch>('species/match', { name: normalizedName, verbose: true })
 
     if (data && data.usageKey) {
       speciesMatchCache.set(cacheKey, data)
@@ -324,7 +211,7 @@ export async function matchSpeciesName(name: string): Promise<GBIFSpeciesMatch |
 
       try {
         console.log(`Attempting fuzzy match for: ${simpleName}`);
-        const fuzzyData = await fetchGBIFData('species/match', {
+        const fuzzyData = await fetchGBIFData<GBIFSpeciesMatch>('species/match', {
           name: simpleName,
           verbose: true,
           strict: false
@@ -360,19 +247,26 @@ export async function getSpeciesDetails(taxonKey: number): Promise<GBIFSpecies |
   }
 
   try {
-    const data = await fetchGBIFData(`species/${taxonKey}`, { verbose: true })
+    const data = await fetchGBIFData<GBIFSpecies>(`species/${taxonKey}`, { verbose: true })
 
     if (data && data.key) {
       // Get vernacular names and descriptions if available
       const [vernacularData, descriptionsData] = await Promise.allSettled([
-        fetchGBIFData(`species/${taxonKey}/vernacularNames`),
-        fetchGBIFData(`species/${taxonKey}/descriptions`)
+        fetchGBIFData<{ results: { vernacularName: string; language: string }[] }>(`species/${taxonKey}/vernacularNames`),
+        fetchGBIFData<{ results: { description: string; language: string; type: string }[] }>(`species/${taxonKey}/descriptions`)
       ])
 
       const speciesData: GBIFSpecies = {
         ...data,
-        vernacularNames: vernacularData.status === 'fulfilled' ? vernacularData.value.results : [],
-        descriptions: descriptionsData.status === 'fulfilled' ? descriptionsData.value.results : []
+        vernacularNames: vernacularData.status === 'fulfilled' ? vernacularData.value.results.map(result => ({
+          vernacularName: result.vernacularName,
+          language: result.language
+        })) : [],
+        descriptions: descriptionsData.status === 'fulfilled' ? descriptionsData.value.results.map(result => ({
+          description: result.description,
+          language: result.language,
+          type: result.type
+        })) : []
       }
 
       speciesDetailsCache.set(taxonKey, speciesData)
@@ -386,27 +280,45 @@ export async function getSpeciesDetails(taxonKey: number): Promise<GBIFSpecies |
 }
 
 /**
- * Get the taxon key for a given species name
- * Enhanced to use species match API for better results
+ * Get the taxon key for a given species name with caching
  */
 export async function fetchTaxonKey(speciesName: string): Promise<number | null> {
-  if (!speciesName) return null
+  // Check common taxa first
+  if (speciesName in COMMON_TAXA) {
+    return COMMON_TAXA[speciesName as keyof typeof COMMON_TAXA].usageKey
+  }
+
+  // Check cache
+  const cachedKey = gbifCache.getTaxonKey(speciesName)
+  if (cachedKey !== undefined) {
+    return cachedKey
+  }
 
   try {
-    // Use the matchSpeciesName function for better matching
-    const match = await matchSpeciesName(speciesName)
+    // Try exact match first
+    const match = await fetchGBIFData<GBIFSpeciesMatch>('species/match', { name: speciesName })
 
     if (match && match.usageKey) {
+      gbifCache.setTaxonKey(speciesName, match.usageKey)
       return match.usageKey
     }
 
-    // If no match found, try fallback to the original search endpoint
-    const data = await fetchGBIFData('species/search', { q: speciesName, limit: 1 })
+    // If no exact match, try search
+    const searchResult = await fetchGBIFData<{ results: GBIFSpeciesMatch[] }>('species/search', {
+      q: speciesName,
+      limit: 1,
+      rank: 'SPECIES'
+    })
 
-    if (data.results && data.results.length > 0) {
-      return data.results[0].key
+    if (searchResult.results && searchResult.results.length > 0) {
+      const key = searchResult.results[0].key || searchResult.results[0].usageKey
+      if (key) {
+        gbifCache.setTaxonKey(speciesName, key)
+        return key
+      }
     }
 
+    gbifCache.setTaxonKey(speciesName, null)
     return null
   } catch (error) {
     console.error(`Error fetching taxon key for ${speciesName}:`, error)
@@ -415,48 +327,88 @@ export async function fetchTaxonKey(speciesName: string): Promise<number | null>
 }
 
 /**
- * Fetch GBIF occurrences for a given taxon key with improved filtering
+ * Fetch GBIF occurrences for a given taxon key with improved caching and filtering
  */
 export async function fetchGBIFOccurrences(
   taxonKey: number,
-  limit: number = 50,
+  limit: number = 100,
   hasCoordinate: boolean = true,
-  hasImages: boolean = false
+  hasImages: boolean = true
 ): Promise<GBIFOccurrence[]> {
   if (!taxonKey) return []
 
-  // Check cache first
-  if (occurrencesCache.has(taxonKey)) {
-    return occurrencesCache.get(taxonKey) || []
+  // Check cache
+  const cachedOccurrences = gbifCache.getOccurrences(taxonKey)
+  if (cachedOccurrences) {
+    return cachedOccurrences
   }
 
   try {
-    // Use the improved fetchGBIFData function
-    const data = await fetchGBIFData('occurrence/search', {
-      taxonKey,
-      limit,
-      hasCoordinate,
-      hasImage: hasImages,
-      // Additional parameters for better quality data
-      hasGeospatialIssue: false,
-      status: 'ACCEPTED'
-    })
+    const allResults: GBIFOccurrence[] = []
+    const pageSize = Math.min(limit, 100)
+    const pagesToFetch = Math.ceil(limit / pageSize)
 
-    if (data.results) {
-      const occurrences = data.results.map((occ: any) => ({
-        key: occ.key,
-        scientificName: occ.scientificName,
-        decimalLatitude: occ.decimalLatitude,
-        decimalLongitude: occ.decimalLongitude,
-        eventDate: occ.eventDate,
-        media: occ.media
-      }));
+    // Fetch all pages in parallel
+    const pagePromises = Array.from({ length: pagesToFetch }, (_, page) =>
+      fetchGBIFData<{
+        results: {
+          key: string;
+          scientificName: string;
+          decimalLatitude: number;
+          decimalLongitude: number;
+          eventDate?: string;
+          media?: Array<{
+            type: string;
+            identifier: string;
+            title?: string;
+          }>;
+        }[]
+      }>('occurrence/search', {
+        taxonKey,
+        limit: pageSize,
+        offset: page * pageSize,
+        hasCoordinate,
+        hasImage: hasImages,
+        hasGeospatialIssue: false,
+        status: 'ACCEPTED',
+        mediaType: hasImages ? 'StillImage' : undefined
+      })
+    )
 
-      occurrencesCache.set(taxonKey, occurrences)
-      return occurrences
+    const pages = await Promise.all(pagePromises)
+
+    for (const page of pages) {
+      if (!page.results || page.results.length === 0) break
+
+      const validOccurrences = page.results
+        .filter(result =>
+          typeof result.decimalLatitude === 'number' &&
+          typeof result.decimalLongitude === 'number' &&
+          (!hasImages || (Array.isArray(result.media) && result.media.length > 0))
+        )
+        .map(result => ({
+          key: String(result.key || ''),
+          scientificName: String(result.scientificName || ''),
+          decimalLatitude: Number(result.decimalLatitude || 0),
+          decimalLongitude: Number(result.decimalLongitude || 0),
+          eventDate: result.eventDate ? String(result.eventDate) : undefined,
+          media: Array.isArray(result.media) ? result.media
+            .filter((m: { type?: string; identifier?: string }) =>
+              m.type === 'StillImage' && typeof m.identifier === 'string'
+            )
+            .map((m: { type?: string; identifier?: string; title?: string }) => ({
+              type: String(m.type || ''),
+              identifier: String(m.identifier || ''),
+              title: m.title ? String(m.title) : undefined
+            })) : undefined
+        }))
+
+      allResults.push(...validOccurrences)
     }
 
-    return []
+    const finalResults = allResults.slice(0, limit)
+    gbifCache.setOccurrences(taxonKey, finalResults)
+    return finalResults
   } catch (error) {
     console.error(`Error fetching GBIF occurrences for taxonKey ${taxonKey}:`, error)
     return []
@@ -471,14 +423,21 @@ export function getGBIFMapUrl(taxonKey: number, style: 'classic' | 'purpleHeat' 
 }
 
 /**
- * Search for species by name with suggested alternatives
+ * Search for species with caching
  */
 export async function searchSpecies(query: string, limit: number = 10): Promise<GBIFSpeciesMatch[]> {
   if (!query || query.length < 3) return []
 
+  // Check cache
+  const cachedMatches = gbifCache.getSpeciesMatches(query)
+  if (cachedMatches) {
+    return cachedMatches
+  }
+
   try {
-    const data = await fetchGBIFData('species/suggest', { q: query, limit })
-    return data || []
+    const data = await fetchGBIFData<GBIFSpeciesMatch[]>('species/suggest', { q: query, limit })
+    gbifCache.setSpeciesMatches(query, data)
+    return data
   } catch (error) {
     console.error(`Error searching species for query "${query}":`, error)
     return []
@@ -486,44 +445,35 @@ export async function searchSpecies(query: string, limit: number = 10): Promise<
 }
 
 /**
- * Get a list of related species or higher taxonomy when no occurrences found
+ * Get related species
  */
 export async function getRelatedSpecies(taxonKey: number, limit: number = 10): Promise<GBIFSpecies[]> {
   if (!taxonKey) return []
 
   try {
-    // Get species details first to identify higher taxonomy
     const species = await getSpeciesDetails(taxonKey)
     if (!species) return []
 
-    // Try to get species in the same genus
-    const genusKey = species.genusKey
-    if (genusKey) {
-      const data = await fetchGBIFData('species/search', {
-        genusKey,
+    if (species.genusKey) {
+      const data = await fetchGBIFData<{ results: GBIFSpecies[] }>('species/search', {
+        genusKey: species.genusKey,
         limit,
         status: 'ACCEPTED',
         rank: 'SPECIES'
       })
 
-      if (data.results && data.results.length > 0) {
-        return data.results
-      }
+      return data.results || []
     }
 
-    // Fallback to family if no genus results
-    const familyKey = species.familyKey
-    if (familyKey) {
-      const data = await fetchGBIFData('species/search', {
-        familyKey,
+    if (species.familyKey) {
+      const data = await fetchGBIFData<{ results: GBIFSpecies[] }>('species/search', {
+        familyKey: species.familyKey,
         limit,
         status: 'ACCEPTED',
         rank: 'SPECIES'
       })
 
-      if (data.results && data.results.length > 0) {
-        return data.results
-      }
+      return data.results || []
     }
 
     return []

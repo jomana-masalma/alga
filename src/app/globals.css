@@ -120,3 +120,17 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Custom Leaflet Tooltip Styles */
+.leaflet-tooltip-custom {
+  padding: 0 !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  white-space: normal !important;
+  width: max-content !important;
+}
+
+.leaflet-tooltip-custom::before {
+  display: none !important;
+}

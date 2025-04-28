@@ -1,10 +1,16 @@
 "use client"
 
 import { useMemo } from "react"
-import { Cell, Pie, PieChart, ResponsiveContainer, Legend, Tooltip } from "recharts"
+import { Cell, Pie, PieChart, ResponsiveContainer, Legend, Tooltip, TooltipProps } from "recharts"
 import { ChartContainer } from "@/components/chart"
 import { algaeColorMap } from "@/services/algae-data-service"
 import type { AlgaeSpecies } from "@/lib/data-processor"
+
+interface ChartData {
+  color: string
+  value: number
+  total: number
+}
 
 interface ColorDistributionChartProps {
   data: AlgaeSpecies[]
@@ -34,9 +40,9 @@ export default function ColorDistributionChart({ data }: ColorDistributionChartP
   }
 
   // Custom tooltip
-  const CustomTooltip = ({ active, payload }: any) => {
+  const CustomTooltip = ({ active, payload }: TooltipProps<number, string>) => {
     if (active && payload && payload.length) {
-      const data = payload[0].payload
+      const data = payload[0].payload as ChartData
       return (
         <div className="bg-background border rounded-md shadow-md p-3">
           <p className="font-medium">{data.color}</p>
@@ -56,8 +62,14 @@ export default function ColorDistributionChart({ data }: ColorDistributionChartP
     total: totalSpecies,
   }))
 
+  const chartConfig = {
+    default: {
+      color: "hsl(215, 70%, 60%)"
+    }
+  }
+
   return (
-    <ChartContainer className="h-full">
+    <ChartContainer className="h-full" config={chartConfig}>
       <ResponsiveContainer width="100%" height="100%">
         <PieChart>
           <Pie

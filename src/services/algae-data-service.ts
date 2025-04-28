@@ -1,5 +1,3 @@
-import { AlgaeSpecies } from "@/lib/data-processor";
-
 // Helper functions for algae data
 export const dataHelpers = {
   // Get producer details including location

@@ -11,10 +11,9 @@ import {
   PaginationPrevious,
 } from "@/components/pagination"
 import { Button } from "@/components/button"
-import { ExternalLink, ChevronDown, Eye, EyeOff } from "lucide-react"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuCheckboxItem } from "@/components/dropdown-menu"
+import { ExternalLink, ChevronDown, Eye } from "lucide-react"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger, DropdownMenuCheckboxItem } from "@/components/dropdown-menu"
 import { Badge } from "@/components/badge"
-import { parseProducers } from "@/lib/data-processor"
 import type { AlgaeSpecies } from "@/lib/data-processor"
 import { algaeColorMap } from "@/services/algae-data-service"
 import ExpandableCell from "./expandable-cell"
